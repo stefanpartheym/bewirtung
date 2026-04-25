@@ -54,6 +54,13 @@ pub fn netFromGross(gross: i64, rate_pct: i64) i64 {
     return @divTrunc(num + @divTrunc(div, 2), div);
 }
 
+/// Gross cents derived from net cents at whole-percent VAT rate.
+/// TODO: Uses half-up rounding for non-negative values.
+pub fn grossFromNet(net: i64, rate_pct: i64) i64 {
+    const mul: i64 = 100 + rate_pct;
+    return @divTrunc(net * mul, 100);
+}
+
 pub const Split = struct {
     ded: i64, // 70% deductible
     non: i64, // 30% non-deductible
