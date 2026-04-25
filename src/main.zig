@@ -104,20 +104,10 @@ const Amounts = struct {
             return Errors.NegativeAmounts;
         }
 
+        result.v7 = result.g7 - result.n7;
+        result.v19 = result.g19 - result.n19;
+
         return result;
-    }
-
-    pub fn vat7(self: Self) i64 {
-        return self.g7 - self.n7;
-    }
-
-    pub fn vat19(self: Self) i64 {
-        return self.g19 - self.n19;
-    }
-
-    /// Total gross amount.
-    pub fn grossTotal(self: Self) i64 {
-        return self.g7 + self.g19 + self.tip;
     }
 };
 
