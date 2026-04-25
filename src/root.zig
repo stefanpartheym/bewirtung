@@ -55,10 +55,10 @@ pub fn netFromGross(gross: i64, rate_pct: i64) i64 {
 }
 
 /// Gross cents derived from net cents at whole-percent VAT rate.
-/// TODO: Uses half-up rounding for non-negative values.
+/// Uses half-up rounding for non-negative values.
 pub fn grossFromNet(net: i64, rate_pct: i64) i64 {
     const mul: i64 = 100 + rate_pct;
-    return @divTrunc(net * mul, 100);
+    return @divTrunc(net * mul + 50, 100);
 }
 
 pub const Split = struct {
@@ -137,6 +137,37 @@ test "netFromGross rounds half up" {
 test "netFromGross zero" {
     try testing.expectEqual(@as(i64, 0), netFromGross(0, 7));
     try testing.expectEqual(@as(i64, 0), netFromGross(0, 19));
+}
+
+test "grossFromNet exact" {
+    // 100.00 net -> 107.00 / 119.00 gross
+    try testing.expectEqual(@as(i64, 10700), grossFromNet(10000, 7));
+    try testing.expectEqual(@as(i64, 11900), grossFromNet(10000, 19));
+}
+
+test "grossFromNet rounds half up" {
+    // 109.81 @ 7%  -> 109.81 * 1.07 = 117.4967 -> 11750 cents (117.50)
+    try testing.expectEqual(@as(i64, 11750), grossFromNet(10981, 7));
+    // 34.20  @ 19% -> 34.20 * 1.19 = 40.698  -> 4070 cents (40.70)
+    try testing.expectEqual(@as(i64, 4070), grossFromNet(3420, 19));
+}
+
+test "grossFromNet zero" {
+    try testing.expectEqual(@as(i64, 0), grossFromNet(0, 7));
+    try testing.expectEqual(@as(i64, 0), grossFromNet(0, 19));
+}
+
+test "grossFromNet / netFromGross round-trip on exact cases" {
+    // Cases where net*mul is exactly divisible by 100 — round-trip is exact.
+    const cases = [_]struct { net: i64, rate: i64 }{
+        .{ .net = 10000, .rate = 7 },
+        .{ .net = 10000, .rate = 19 },
+        .{ .net = 2000, .rate = 19 },
+    };
+    for (cases) |c| {
+        const g = grossFromNet(c.net, c.rate);
+        try testing.expectEqual(c.net, netFromGross(g, c.rate));
+    }
 }
 
 test "split7030 sum preserved" {
