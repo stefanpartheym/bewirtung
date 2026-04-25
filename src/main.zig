@@ -26,7 +26,7 @@ const Amounts = struct {
         CannotProvideBoth19,
         MissingAmount7,
         MissingAmount19,
-        MissingTip,
+        MissingTipOrTotal,
         NegativeAmounts,
     };
 
@@ -99,14 +99,20 @@ const Amounts = struct {
             return Errors.MissingAmount19;
         }
 
-        // Handle tip input.
-        result.tip = input.tip orelse return Errors.MissingTip;
+        // Handle tip / total inputs. At least one must be provided;
+        // the missing one is derived so that g7 + g19 + tip == total.
+        result.input.tip = input.tip != null;
+        result.input.total = input.total != null;
+        if (!result.input.tip and !result.input.total) {
+            return Errors.MissingTipOrTotal;
+        }
 
-        // Handle total amount input.
-        if (input.total) |total| {
-            result.input.total = true;
-            result.total = total;
-        } else {
+        if (input.tip) |t| result.tip = t;
+        if (input.total) |tot| result.total = tot;
+
+        if (!result.input.tip) {
+            result.tip = result.total - result.g7 - result.g19;
+        } else if (!result.input.total) {
             result.total = result.g7 + result.g19 + result.tip;
         }
 
@@ -125,19 +131,22 @@ const usage =
     \\bewirtung - Deductible calc for German Bewirtungsbeleg (SKR04)
     \\
     \\Input amounts for 7% and 19% VAT can be provided as gross or net amounts.
+    \\At least one of --tip or --total must be provided; the other is derived.
     \\Amounts in EUR with up to 2 decimals (e.g. 42.17).
     \\
     \\Usage:
-    \\  bewirtung --gross7 <EUR> --gross19 <EUR> --tip <EUR> [--total <EUR>]
-    \\  bewirtung --net7 <EUR> --net19 <EUR> --tip <EUR> [--total <EUR>]
+    \\  bewirtung --gross7 <EUR> --gross19 <EUR> --tip <EUR>   [--total <EUR>]
+    \\  bewirtung --gross7 <EUR> --gross19 <EUR> --total <EUR> [--tip <EUR>]
+    \\  (--net7 / --net19 may be substituted for the gross variants)
     \\
     \\Flags:
     \\  --gross7    Gross amount taxed at 7%  VAT (food)
     \\  --gross19   Gross amount taxed at 19% VAT (beverages/other)
     \\  --net7      Net amount taxed at 7%  VAT (food)
     \\  --net19     Net amount taxed at 19% VAT (beverages/other)
-    \\  --tip       Tip amount (no VAT)
-    \\  --total     Optional gross total for cross-validation
+    \\  --tip       Tip amount (no VAT) — derived from --total if omitted
+    \\  --total     Gross total — derived from gross7+gross19+tip if omitted
+    \\              When both --tip and --total are given, they are cross-checked.
     \\  -h, --help  Show this help
     \\
 ;
@@ -241,8 +250,8 @@ pub fn main(init: std.process.Init) !void {
         error.CannotProvideBoth19 => dieUsage(stderr, "cannot provide both --net19 and --gross19", .{}),
         error.MissingAmount7 => dieUsage(stderr, "missing --net7 or --gross7", .{}),
         error.MissingAmount19 => dieUsage(stderr, "missing --net19 or --gross19", .{}),
-        error.MissingTip => dieUsage(stderr, "missing --tip", .{}),
-        error.NegativeAmounts => dieUsage(stderr, "amounts must be non-negative", .{}),
+        error.MissingTipOrTotal => dieUsage(stderr, "provide at least one of --tip or --total", .{}),
+        error.NegativeAmounts => dieUsage(stderr, "amounts must be non-negative (check that --total >= gross7 + gross19)", .{}),
     };
 
     // 70/30 splits on gross (for headline numbers)
@@ -269,7 +278,11 @@ pub fn main(init: std.process.Init) !void {
     } else {
         try printRow(stdout, "19% VAT (bev.)  gross", amounts.g19);
     }
-    try printRow(stdout, "Tip", amounts.tip);
+    if (amounts.input.tip) {
+        try printRow(stdout, "Tip", amounts.tip);
+    } else {
+        try printRow(stdout, "Tip (computed)", amounts.tip);
+    }
     if (amounts.input.total) {
         try printRow(stdout, "Gross total", amounts.total);
     } else {
@@ -299,15 +312,18 @@ pub fn main(init: std.process.Init) !void {
     try printRow(stdout, "1571 Vorsteuer  7% (70% ded.)", v7_split.ded);
     try printRow(stdout, "1401 Vorsteuer 19% (70% ded.)", v19_split.ded);
 
-    if (total) |t| {
+    // Only meaningful when BOTH tip and total were provided; otherwise
+    // the missing one was derived from the other and equality is trivial.
+    if (amounts.input.tip and amounts.input.total) {
+        const computed = amounts.g7 + amounts.g19 + amounts.tip;
         try stdout.writeAll("\nCross-check\n");
-        try printRow(stdout, "Provided total", t);
-        try printRow(stdout, "Computed gross", amounts.total);
-        if (t == amounts.total) {
+        try printRow(stdout, "Provided total", amounts.total);
+        try printRow(stdout, "Computed gross (g7+g19+tip)", computed);
+        if (computed == amounts.total) {
             try stdout.writeAll("  Result: OK\n");
         } else {
             var bd: [32]u8 = undefined;
-            const diff = try bew.fmtEur(&bd, amounts.total - t);
+            const diff = try bew.fmtEur(&bd, computed - amounts.total);
             try stdout.print("  WARNING: MISMATCH (computed - total = {s} EUR)\n", .{diff});
         }
     }
