@@ -36,28 +36,38 @@ const Amounts = struct {
     input: InputFlags = .{},
 
     /// Net amount (7% VAT)
-    n7: i64 = 0,
+    n7: i64,
     /// Net amount (19% VAT)
-    n19: i64 = 0,
+    n19: i64,
 
     /// Gross amount (7% VAT)
-    g7: i64 = 0,
+    g7: i64,
     /// Gross amount (19% VAT)
-    g19: i64 = 0,
+    g19: i64,
 
     /// VAT amount (7% VAT)
-    v7: i64 = 0,
+    v7: i64,
     /// Gross amount (19% VAT)
-    v19: i64 = 0,
+    v19: i64,
 
     /// Tip amount (no VAT)
-    tip: i64 = 0,
+    tip: i64,
 
     /// total amount (gross)
-    total: i64 = 0,
+    total: i64,
 
     pub fn new(input: Input) Errors!Self {
-        var result: Self = .{};
+        var result: Self = .{
+            .input = .{},
+            .n7 = undefined,
+            .n19 = undefined,
+            .g7 = undefined,
+            .g19 = undefined,
+            .v7 = undefined,
+            .v19 = undefined,
+            .tip = undefined,
+            .total = undefined,
+        };
 
         // Handle 7% VAT inputs.
         if (input.net7 != null and input.gross7 != null) {
