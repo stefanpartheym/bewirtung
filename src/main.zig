@@ -258,11 +258,23 @@ pub fn main(init: std.process.Init) !void {
     try stdout.writeAll("BEWIRTUNG - Deductible calc (SKR04)\n");
     try stdout.writeAll("=" ** 80 ++ "\n\n");
 
-    try stdout.writeAll("Gross input\n");
-    try printRow(stdout, "7%  VAT (food)  gross", amounts.g7);
-    try printRow(stdout, "19% VAT (bev.)  gross", amounts.g19);
-    try printRow(stdout, "Tip             gross", amounts.tip);
-    try printRow(stdout, "Gross total", amounts.total);
+    try stdout.writeAll("Input\n");
+    if (amounts.input.n7) {
+        try printRow(stdout, "7%  VAT (food)  net", amounts.n7);
+    } else {
+        try printRow(stdout, "7%  VAT (food)  gross", amounts.g7);
+    }
+    if (amounts.input.n19) {
+        try printRow(stdout, "19% VAT (bev.)  net", amounts.n19);
+    } else {
+        try printRow(stdout, "19% VAT (bev.)  gross", amounts.g19);
+    }
+    try printRow(stdout, "Tip", amounts.tip);
+    if (amounts.input.total) {
+        try printRow(stdout, "Gross total", amounts.total);
+    } else {
+        try printRow(stdout, "Gross total (computed)", amounts.total);
+    }
 
     try stdout.writeAll("\nNet / VAT breakdown\n");
     try printRow(stdout, "7%  net", amounts.n7);
