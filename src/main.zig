@@ -2,131 +2,6 @@ const std = @import("std");
 const Io = std.Io;
 const bew = @import("bewirtung");
 
-const Amounts = struct {
-    const Input = struct {
-        net7: ?i64,
-        gross7: ?i64,
-        net19: ?i64,
-        gross19: ?i64,
-        tip: ?i64,
-        total: ?i64,
-    };
-
-    const InputFlags = struct {
-        n7: bool = false,
-        g7: bool = false,
-        n19: bool = false,
-        g19: bool = false,
-        tip: bool = false,
-        total: bool = false,
-    };
-
-    const Errors = error{
-        CannotProvideBoth7,
-        CannotProvideBoth19,
-        MissingAmount7,
-        MissingAmount19,
-        MissingTipOrTotal,
-        NegativeAmounts,
-    };
-
-    const Self = @This();
-
-    /// Tracks which amounts were provided as inputs.
-    input: InputFlags = .{},
-
-    /// Net amount (7% VAT)
-    n7: i64,
-    /// Net amount (19% VAT)
-    n19: i64,
-
-    /// Gross amount (7% VAT)
-    g7: i64,
-    /// Gross amount (19% VAT)
-    g19: i64,
-
-    /// VAT amount (7% VAT)
-    v7: i64,
-    /// Gross amount (19% VAT)
-    v19: i64,
-
-    /// Tip amount (no VAT)
-    tip: i64,
-
-    /// total amount (gross)
-    total: i64,
-
-    pub fn new(input: Input) Errors!Self {
-        var result: Self = .{
-            .input = .{},
-            .n7 = undefined,
-            .n19 = undefined,
-            .g7 = undefined,
-            .g19 = undefined,
-            .v7 = undefined,
-            .v19 = undefined,
-            .tip = undefined,
-            .total = undefined,
-        };
-
-        // Handle 7% VAT inputs.
-        if (input.net7 != null and input.gross7 != null) {
-            return Errors.CannotProvideBoth7;
-        } else if (input.net7) |n7| {
-            result.input.n7 = true;
-            result.n7 = n7;
-            result.g7 = bew.grossFromNet(n7, 7);
-        } else if (input.gross7) |g7| {
-            result.input.g7 = true;
-            result.n7 = bew.netFromGross(g7, 7);
-            result.g7 = g7;
-        } else {
-            return Errors.MissingAmount7;
-        }
-
-        // Handle 19% VAT inputs.
-        if (input.net19 != null and input.gross19 != null) {
-            return Errors.CannotProvideBoth19;
-        } else if (input.net19) |n19| {
-            result.input.n19 = true;
-            result.n19 = n19;
-            result.g19 = bew.grossFromNet(n19, 19);
-        } else if (input.gross19) |g19| {
-            result.input.g19 = true;
-            result.n19 = bew.netFromGross(g19, 19);
-            result.g19 = g19;
-        } else {
-            return Errors.MissingAmount19;
-        }
-
-        // Handle tip / total inputs. At least one must be provided;
-        // the missing one is derived so that g7 + g19 + tip == total.
-        result.input.tip = input.tip != null;
-        result.input.total = input.total != null;
-        if (!result.input.tip and !result.input.total) {
-            return Errors.MissingTipOrTotal;
-        }
-
-        if (input.tip) |t| result.tip = t;
-        if (input.total) |tot| result.total = tot;
-
-        if (!result.input.tip) {
-            result.tip = result.total - result.g7 - result.g19;
-        } else if (!result.input.total) {
-            result.total = result.g7 + result.g19 + result.tip;
-        }
-
-        if (result.g7 < 0 or result.g19 < 0 or result.tip < 0) {
-            return Errors.NegativeAmounts;
-        }
-
-        result.v7 = result.g7 - result.n7;
-        result.v19 = result.g19 - result.n19;
-
-        return result;
-    }
-};
-
 const usage =
     \\bewirtung - Deductible calc for German Bewirtungsbeleg (SKR04)
     \\
@@ -238,7 +113,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
-    const amounts = Amounts.new(.{
+    const amounts = bew.Amounts.new(.{
         .net7 = net7,
         .net19 = net19,
         .gross7 = gross7,
@@ -254,15 +129,7 @@ pub fn main(init: std.process.Init) !void {
         error.NegativeAmounts => dieUsage(stderr, "amounts must be non-negative (check that --total >= gross7 + gross19)", .{}),
     };
 
-    // 70/30 splits on gross (for headline numbers)
-    const meals_split = bew.split7030(amounts.g7 + amounts.g19);
-    const tip_split = bew.split7030(amounts.tip);
-
-    // Per-rate splits for SKR04 rows (on net and on VAT)
-    const n7_split = bew.split7030(amounts.n7);
-    const n19_split = bew.split7030(amounts.n19);
-    const v7_split = bew.split7030(amounts.v7); // 1571 Vorsteuer 7%  uses .ded
-    const v19_split = bew.split7030(amounts.v19); // 1401 Vorsteuer 19% uses .ded
+    const splits = bew.splitAmounts(amounts);
 
     try stdout.writeAll("BEWIRTUNG - Deductible calc (SKR04)\n");
     try stdout.writeAll("=" ** 80 ++ "\n\n");
@@ -297,20 +164,20 @@ pub fn main(init: std.process.Init) !void {
     try printRow(stdout, "Tip (no VAT)", amounts.tip);
 
     try stdout.writeAll("\n70 / 30 split\n");
-    try printRow(stdout, "Meals 70% deductible (net+VAT)", meals_split.ded);
-    try printRow(stdout, "Meals 30% non-deductible", meals_split.non);
-    try printRow(stdout, "Tip   70% deductible", tip_split.ded);
-    try printRow(stdout, "Tip   30% non-deductible", tip_split.non);
+    try printRow(stdout, "Meals 70% deductible (net+VAT)", splits.meals.ded);
+    try printRow(stdout, "Meals 30% non-deductible", splits.meals.non);
+    try printRow(stdout, "Tip   70% deductible", splits.tip.ded);
+    try printRow(stdout, "Tip   30% non-deductible", splits.tip.non);
 
     try stdout.writeAll("\nSKR04 bookings\n");
-    try printRow(stdout, "6640 Meals 70% ded. (7%  net)", n7_split.ded);
-    try printRow(stdout, "6640 Meals 70% ded. (19% net)", n19_split.ded);
-    try printRow(stdout, "6644 Meals 30% non-ded. (7%  net)", n7_split.non);
-    try printRow(stdout, "6644 Meals 30% non-ded. (19% net)", n19_split.non);
-    try printRow(stdout, "6640 Tip 70% ded. (no VAT)", tip_split.ded);
-    try printRow(stdout, "6644 Tip 30% non-ded. (no VAT)", tip_split.non);
-    try printRow(stdout, "1571 Vorsteuer  7% (70% ded.)", v7_split.ded);
-    try printRow(stdout, "1401 Vorsteuer 19% (70% ded.)", v19_split.ded);
+    try printRow(stdout, "6640 Meals 70% ded. (7%  net)", splits.net7.ded);
+    try printRow(stdout, "6640 Meals 70% ded. (19% net)", splits.net19.ded);
+    try printRow(stdout, "6644 Meals 30% non-ded. (7%  net)", splits.net7.non);
+    try printRow(stdout, "6644 Meals 30% non-ded. (19% net)", splits.net19.non);
+    try printRow(stdout, "6640 Tip 70% ded. (no VAT)", splits.tip.ded);
+    try printRow(stdout, "6644 Tip 30% non-ded. (no VAT)", splits.tip.non);
+    try printRow(stdout, "1571 Vorsteuer  7% (70% ded.)", splits.vat7.ded);
+    try printRow(stdout, "1401 Vorsteuer 19% (70% ded.)", splits.vat19.ded);
 
     // Only meaningful when BOTH tip and total were provided; otherwise
     // the missing one was derived from the other and equality is trivial.

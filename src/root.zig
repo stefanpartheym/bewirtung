@@ -1,4 +1,8 @@
 const std = @import("std");
+const Split = @import("Split.zig");
+const Splits = @import("Splits.zig");
+pub const Amounts = @import("Amounts.zig");
+pub const conversion = @import("conversion.zig");
 
 pub const ParseError = error{BadNumber};
 
@@ -46,31 +50,25 @@ pub fn parseCents(s: []const u8) ParseError!i64 {
     return cents;
 }
 
-/// Net cents derived from gross cents at whole-percent VAT rate.
-/// Uses half-up rounding for non-negative values. VAT = gross - net.
-pub fn netFromGross(gross: i64, rate_pct: i64) i64 {
-    const div: i64 = 100 + rate_pct;
-    const num = gross * 100;
-    return @divTrunc(num + @divTrunc(div, 2), div);
-}
-
-/// Gross cents derived from net cents at whole-percent VAT rate.
-/// Uses half-up rounding for non-negative values.
-pub fn grossFromNet(net: i64, rate_pct: i64) i64 {
-    const mul: i64 = 100 + rate_pct;
-    return @divTrunc(net * mul + 50, 100);
-}
-
-pub const Split = struct {
-    ded: i64, // 70% deductible
-    non: i64, // 30% non-deductible
-};
-
 /// 70/30 split with half-up rounding on the 70% part.
 /// `ded + non == amount` always (non is derived by subtraction).
 pub fn split7030(amount: i64) Split {
     const ded = @divTrunc(amount * 70 + 50, 100);
     return .{ .ded = ded, .non = amount - ded };
+}
+
+/// Perform 70/30 split for all amounts.
+pub fn splitAmounts(amounts: Amounts) Splits {
+    return .{
+        // 70/30 splits on gross (for headline numbers)
+        .meals = split7030(amounts.g7 + amounts.g19),
+        .tip = split7030(amounts.tip),
+        // Per-rate splits for SKR04 rows (on net and on VAT)
+        .net7 = split7030(amounts.n7),
+        .net19 = split7030(amounts.n19),
+        .vat7 = split7030(amounts.v7), // 1571 Vorsteuer 7%  uses .ded
+        .vat19 = split7030(amounts.v19), // 1401 Vorsteuer 19% uses .ded
+    };
 }
 
 /// Format cents as "D.CC" (always 2 decimals) into `buf`.
@@ -116,60 +114,6 @@ test "parseCents rejects garbage" {
     try testing.expectError(error.BadNumber, parseCents(" 12"));
 }
 
-test "netFromGross exact 19%" {
-    // 119.00 gross -> 100.00 net, 19.00 VAT
-    try testing.expectEqual(@as(i64, 10000), netFromGross(11900, 19));
-    try testing.expectEqual(@as(i64, 11900) - @as(i64, 10000), @as(i64, 1900));
-}
-
-test "netFromGross exact 7%" {
-    // 107.00 gross -> 100.00 net
-    try testing.expectEqual(@as(i64, 10000), netFromGross(10700, 7));
-}
-
-test "netFromGross rounds half up" {
-    // 23.80 at 19% -> 23.80 / 1.19 = 20.0000 -> 2000
-    try testing.expectEqual(@as(i64, 2000), netFromGross(2380, 19));
-    // 42.50 at 7%  -> 42.50 / 1.07 = 39.7196... -> 3972 cents
-    try testing.expectEqual(@as(i64, 3972), netFromGross(4250, 7));
-}
-
-test "netFromGross zero" {
-    try testing.expectEqual(@as(i64, 0), netFromGross(0, 7));
-    try testing.expectEqual(@as(i64, 0), netFromGross(0, 19));
-}
-
-test "grossFromNet exact" {
-    // 100.00 net -> 107.00 / 119.00 gross
-    try testing.expectEqual(@as(i64, 10700), grossFromNet(10000, 7));
-    try testing.expectEqual(@as(i64, 11900), grossFromNet(10000, 19));
-}
-
-test "grossFromNet rounds half up" {
-    // 109.81 @ 7%  -> 109.81 * 1.07 = 117.4967 -> 11750 cents (117.50)
-    try testing.expectEqual(@as(i64, 11750), grossFromNet(10981, 7));
-    // 34.20  @ 19% -> 34.20 * 1.19 = 40.698  -> 4070 cents (40.70)
-    try testing.expectEqual(@as(i64, 4070), grossFromNet(3420, 19));
-}
-
-test "grossFromNet zero" {
-    try testing.expectEqual(@as(i64, 0), grossFromNet(0, 7));
-    try testing.expectEqual(@as(i64, 0), grossFromNet(0, 19));
-}
-
-test "grossFromNet / netFromGross round-trip on exact cases" {
-    // Cases where net*mul is exactly divisible by 100 — round-trip is exact.
-    const cases = [_]struct { net: i64, rate: i64 }{
-        .{ .net = 10000, .rate = 7 },
-        .{ .net = 10000, .rate = 19 },
-        .{ .net = 2000, .rate = 19 },
-    };
-    for (cases) |c| {
-        const g = grossFromNet(c.net, c.rate);
-        try testing.expectEqual(c.net, netFromGross(g, c.rate));
-    }
-}
-
 test "split7030 sum preserved" {
     const cases = [_]i64{ 0, 1, 2, 3, 100, 333, 1000, 12345, 99999, 1 };
     for (cases) |c| {
@@ -212,8 +156,8 @@ test "e2e scenario" {
     const g19: i64 = 2380;
     const gt: i64 = 500;
 
-    const n7 = netFromGross(g7, 7);
-    const n19 = netFromGross(g19, 19);
+    const n7 = conversion.netFromGross(g7, 7);
+    const n19 = conversion.netFromGross(g19, 19);
     const v7 = g7 - n7;
     const v19 = g19 - n19;
 
