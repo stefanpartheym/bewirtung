@@ -78,6 +78,10 @@ pub fn splitAmounts(amounts: Amounts) Splits {
         .net19 = .{ .ded = n19_ded, .non = amounts.g19 - n19_ded - vat19.ded },
         .vat7 = vat7, // 1571 Vorsteuer 7% uses .ded
         .vat19 = vat19, // 1401 Vorsteuer 19% uses .ded
+        // Per-rate 70/30 split on gross (Lexware-style: 6640/6644 hold gross,
+        // the deductible Vorsteuer is auto-extracted by the account itself).
+        .gross7 = split7030(amounts.g7),
+        .gross19 = split7030(amounts.g19),
     };
 }
 

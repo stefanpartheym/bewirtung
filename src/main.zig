@@ -169,15 +169,23 @@ pub fn main(init: std.process.Init) !void {
     try printRow(stdout, "Tip   70% deductible", splits.tip.ded);
     try printRow(stdout, "Tip   30% non-deductible", splits.tip.non);
 
-    try stdout.writeAll("\nSKR04 bookings\n");
+    try stdout.writeAll("\nSKR04 bookings (classic, 8 rows: explicit Vorsteuer)\n");
     try printRow(stdout, "6640 Meals 70% ded. (7%  net)", splits.net7.ded);
     try printRow(stdout, "6640 Meals 70% ded. (19% net)", splits.net19.ded);
-    try printRow(stdout, "6644 Meals 30% non-ded. (7%  net)", splits.net7.non);
-    try printRow(stdout, "6644 Meals 30% non-ded. (19% net)", splits.net19.non);
+    try printRow(stdout, "6644 Meals 30% non-ded. (7%  net+VAT)", splits.net7.non);
+    try printRow(stdout, "6644 Meals 30% non-ded. (19% net+VAT)", splits.net19.non);
     try printRow(stdout, "6640 Tip 70% ded. (no VAT)", splits.tip.ded);
     try printRow(stdout, "6644 Tip 30% non-ded. (no VAT)", splits.tip.non);
     try printRow(stdout, "1571 Vorsteuer  7% (70% ded.)", splits.vat7.ded);
     try printRow(stdout, "1401 Vorsteuer 19% (70% ded.)", splits.vat19.ded);
+
+    try stdout.writeAll("\nSKR04 bookings (Lexware, 6 rows: account auto-extracts Vorsteuer)\n");
+    try printRow(stdout, "6640 Meals 70% ded. (7%  gross)", splits.gross7.ded);
+    try printRow(stdout, "6640 Meals 70% ded. (19% gross)", splits.gross19.ded);
+    try printRow(stdout, "6644 Meals 30% non-ded. (7%)", splits.gross7.non);
+    try printRow(stdout, "6644 Meals 30% non-ded. (19%)", splits.gross19.non);
+    try printRow(stdout, "6640 Tip 70% ded. (no VAT)", splits.tip.ded);
+    try printRow(stdout, "6644 Tip 30% non-ded. (no VAT)", splits.tip.non);
 
     // Only meaningful when BOTH tip and total were provided; otherwise
     // the missing one was derived from the other and equality is trivial.
