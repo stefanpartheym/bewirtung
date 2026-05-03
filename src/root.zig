@@ -59,15 +59,25 @@ pub fn split7030(amount: i64) Split {
 
 /// Perform 70/30 split for all amounts.
 pub fn splitAmounts(amounts: Amounts) Splits {
+    const vat7 = split7030(amounts.v7);
+    const vat19 = split7030(amounts.v19);
+    const n7_ded = split7030(amounts.n7).ded;
+    const n19_ded = split7030(amounts.n19).ded;
     return .{
         // 70/30 splits on gross (for headline numbers)
         .meals = split7030(amounts.g7 + amounts.g19),
         .tip = split7030(amounts.tip),
-        // Per-rate splits for SKR04 rows (on net and on VAT)
-        .net7 = split7030(amounts.n7),
-        .net19 = split7030(amounts.n19),
-        .vat7 = split7030(amounts.v7), // 1571 Vorsteuer 7%  uses .ded
-        .vat19 = split7030(amounts.v19), // 1401 Vorsteuer 19% uses .ded
+        // Per-rate booking splits.
+        // .ded = 70% * net
+        //   6640, deductible expense
+        // .non = gross - .ded - vorsteuer
+        //   6644, carries the non-deductible 30% of net AND the non-deductible
+        //   30% of VAT, plus any rounding residual so the eight booked rows sum
+        //   exactly to gross
+        .net7 = .{ .ded = n7_ded, .non = amounts.g7 - n7_ded - vat7.ded },
+        .net19 = .{ .ded = n19_ded, .non = amounts.g19 - n19_ded - vat19.ded },
+        .vat7 = vat7, // 1571 Vorsteuer 7% uses .ded
+        .vat19 = vat19, // 1401 Vorsteuer 19% uses .ded
     };
 }
 
@@ -149,6 +159,33 @@ test "fmtEur formats" {
     try testing.expectEqualStrings("-1.23", try fmtEur(&buf, -123));
     try testing.expectEqualStrings("1000.00", try fmtEur(&buf, 100000));
     try testing.expectEqualStrings("9.09", try fmtEur(&buf, 909));
+}
+
+test "SKR04 bookings sum to gross total" {
+    const total = try parseCents("38.00");
+    const amounts = try Amounts.new(.{
+        .net7 = try parseCents("27.85"),
+        .net19 = try parseCents("3.28"),
+        .gross7 = null,
+        .gross19 = null,
+        .tip = null,
+        .total = total,
+    });
+
+    const s = splitAmounts(amounts);
+
+    // The eight rows actually booked to SKR04.
+    const sum_bookings =
+        s.net7.ded // 6640 Meals 70% ded. (7%  net)
+        + s.net19.ded // 6640 Meals 70% ded. (19% net)
+        + s.net7.non // 6644 Meals 30% non-ded. (7%  net)
+        + s.net19.non // 6644 Meals 30% non-ded. (19% net)
+        + s.tip.ded // 6640 Tip 70% ded. (no VAT)
+        + s.tip.non // 6644 Tip 30% non-ded. (no VAT)
+        + s.vat7.ded // 1571 Vorsteuer  7% (70% ded.)
+        + s.vat19.ded; // 1401 Vorsteuer 19% (70% ded.)
+
+    try testing.expectEqual(total, sum_bookings);
 }
 
 test "e2e scenario" {
